@@ -4,6 +4,15 @@ import * as fabric from 'fabric'
 const CANVAS_WIDTH = 1280
 const CANVAS_HEIGHT = 670
 
+const FONT_OPTIONS = [
+  { value: 'Hiragino Kaku Gothic ProN, sans-serif', label: 'Hiragino Kaku Gothic ProN' },
+  { value: 'Hiragino Mincho ProN, serif', label: 'Hiragino Mincho ProN' },
+  { value: 'Noto Sans JP, sans-serif', label: 'Noto Sans JP' },
+  { value: 'Noto Serif JP, serif', label: 'Noto Serif JP' },
+  { value: 'YuGothic, sans-serif', label: 'YuGothic' },
+  { value: 'YuMincho, serif', label: 'YuMincho' },
+]
+
 interface ScatteredText {
   text: string
   fontSize: number
@@ -40,6 +49,8 @@ function App() {
   const [titleFontSize, setTitleFontSize] = useState(120)
   const [segmentMinSize, setSegmentMinSize] = useState(16)
   const [segmentMaxSize, setSegmentMaxSize] = useState(40)
+  const [fontFamily, setFontFamily] = useState(FONT_OPTIONS[0].value)
+  const [scatteredPositions, setScatteredPositions] = useState<ScatteredText[]>([])
 
   const generateScatteredPositions = useCallback((segments: string[]): ScatteredText[] => {
     const centerX = CANVAS_WIDTH / 2
@@ -48,34 +59,54 @@ function App() {
     const titleHeight = titleFontSize * 1.2
 
     const exclusionZone = {
-      left: centerX - titleWidth / 2 - 20,
-      right: centerX + titleWidth / 2 + 20,
-      top: centerY - titleHeight / 2 - 20,
-      bottom: centerY + titleHeight / 2 + 20,
+      left: centerX - titleWidth / 2 - 40,
+      right: centerX + titleWidth / 2 + 40,
+      top: centerY - titleHeight / 2 - 40,
+      bottom: centerY + titleHeight / 2 + 40,
     }
 
     const positions: ScatteredText[] = []
-    const padding = 30
+    const padding = 20
+    const frameWidth = 120
 
     segments.forEach((text) => {
       const fontSize = Math.floor(Math.random() * (segmentMaxSize - segmentMinSize + 1)) + segmentMinSize
       const isVertical = Math.random() > 0.7
 
-      let x: number, y: number
+      let x = 0
+      let y = 0
       let attempts = 0
       const maxAttempts = 100
 
       do {
-        x = padding + Math.random() * (CANVAS_WIDTH - padding * 2)
-        y = padding + Math.random() * (CANVAS_HEIGHT - padding * 2)
+        const zone = Math.floor(Math.random() * 4)
+
+        switch (zone) {
+          case 0:
+            x = padding + Math.random() * (CANVAS_WIDTH - padding * 2)
+            y = padding + Math.random() * frameWidth
+            break
+          case 1:
+            x = padding + Math.random() * (CANVAS_WIDTH - padding * 2)
+            y = CANVAS_HEIGHT - padding - frameWidth + Math.random() * frameWidth
+            break
+          case 2:
+            x = padding + Math.random() * frameWidth
+            y = padding + Math.random() * (CANVAS_HEIGHT - padding * 2)
+            break
+          default:
+            x = CANVAS_WIDTH - padding - frameWidth + Math.random() * frameWidth
+            y = padding + Math.random() * (CANVAS_HEIGHT - padding * 2)
+            break
+        }
         attempts++
 
         if (attempts >= maxAttempts) break
       } while (
-        x > exclusionZone.left - 50 &&
-        x < exclusionZone.right + 50 &&
-        y > exclusionZone.top - 30 &&
-        y < exclusionZone.bottom + 30
+        x > exclusionZone.left &&
+        x < exclusionZone.right &&
+        y > exclusionZone.top &&
+        y < exclusionZone.bottom
       )
 
       positions.push({
@@ -83,7 +114,7 @@ function App() {
         fontSize,
         x,
         y,
-        angle: isVertical ? 0 : 0,
+        angle: 0,
         isVertical,
       })
     })
@@ -98,10 +129,7 @@ function App() {
     canvas.clear()
     canvas.backgroundColor = backgroundColor
 
-    const segments = content.split('\n').filter(s => s.trim())
-    const scatteredTexts = generateScatteredPositions(segments)
-
-    scatteredTexts.forEach(({ text, fontSize, x, y, isVertical }) => {
+    scatteredPositions.forEach(({ text, fontSize, x, y, isVertical }) => {
       if (isVertical) {
         const chars = text.split('')
         let offsetY = 0
@@ -111,7 +139,7 @@ function App() {
             top: y + offsetY,
             fontSize: fontSize,
             fill: segmentColor,
-            fontFamily: 'Hiragino Kaku Gothic ProN, Meiryo, sans-serif',
+            fontFamily: fontFamily,
             selectable: true,
           })
           canvas.add(charText)
@@ -123,7 +151,7 @@ function App() {
           top: y,
           fontSize: fontSize,
           fill: segmentColor,
-          fontFamily: 'Hiragino Kaku Gothic ProN, Meiryo, sans-serif',
+          fontFamily: fontFamily,
           selectable: true,
         })
         canvas.add(textObj)
@@ -131,11 +159,12 @@ function App() {
     })
 
     const titleWidth = title.length * titleFontSize * 0.85
+    const highlightHeight = titleFontSize * 0.5
     const highlightRect = new fabric.Rect({
-      left: CANVAS_WIDTH / 2 - titleWidth / 2 - 10,
-      top: CANVAS_HEIGHT / 2 - titleFontSize / 2 + 10,
-      width: titleWidth + 20,
-      height: titleFontSize * 0.9,
+      left: CANVAS_WIDTH / 2 - titleWidth / 2 - 20,
+      top: CANVAS_HEIGHT / 2 - highlightHeight / 2 + titleFontSize * 0.2,
+      width: titleWidth + 40,
+      height: highlightHeight,
       fill: highlightColor,
       selectable: true,
     })
@@ -146,7 +175,7 @@ function App() {
       top: CANVAS_HEIGHT / 2,
       fontSize: titleFontSize,
       fill: titleColor,
-      fontFamily: 'Hiragino Kaku Gothic ProN, Meiryo, sans-serif',
+      fontFamily: fontFamily,
       fontWeight: 'bold',
       originX: 'center',
       originY: 'center',
@@ -155,7 +184,7 @@ function App() {
     canvas.add(titleText)
 
     canvas.renderAll()
-  }, [backgroundColor, content, generateScatteredPositions, highlightColor, segmentColor, title, titleColor, titleFontSize])
+  }, [backgroundColor, scatteredPositions, highlightColor, segmentColor, title, titleColor, titleFontSize, fontFamily])
 
   useEffect(() => {
     if (canvasRef.current && !fabricRef.current) {
@@ -171,6 +200,13 @@ function App() {
       fabricRef.current = null
     }
   }, [])
+
+  useEffect(() => {
+    const segments = content.split('\n').filter(s => s.trim())
+    if (segments.length > 0 && scatteredPositions.length === 0) {
+      setScatteredPositions(generateScatteredPositions(segments))
+    }
+  }, [content, scatteredPositions.length, generateScatteredPositions])
 
   useEffect(() => {
     renderCanvas()
@@ -191,8 +227,9 @@ function App() {
     link.click()
   }
 
-  const handleRegenerate = () => {
-    renderCanvas()
+  const handleChangeLayout = () => {
+    const segments = content.split('\n').filter(s => s.trim())
+    setScatteredPositions(generateScatteredPositions(segments))
   }
 
   return (
@@ -214,10 +251,10 @@ function App() {
 
             <div className="mt-4 flex gap-4">
               <button
-                onClick={handleRegenerate}
+                onClick={handleChangeLayout}
                 className="px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium"
               >
-                Regenerate Layout
+                Change Layout
               </button>
               <button
                 onClick={handleExport}
@@ -257,6 +294,22 @@ function App() {
                   onChange={(e) => setTitleFontSize(Number(e.target.value))}
                   className="w-full"
                 />
+              </div>
+
+              {/* Font Family */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Font Family</label>
+                <select
+                  value={fontFamily}
+                  onChange={(e) => setFontFamily(e.target.value)}
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                >
+                  {FONT_OPTIONS.map((font) => (
+                    <option key={font.value} value={font.value}>
+                      {font.label}
+                    </option>
+                  ))}
+                </select>
               </div>
 
               {/* Colors */}
