@@ -1,0 +1,17 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm create:*)",
+      "Bash(npm install:*)",
+      "Bash(git init:*)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(git -C /Users/wadasatsuki/projects/blog-thumbnail-generator log --oneline -10)",
+      "Bash(git -C /Users/wadasatsuki/projects/blog-thumbnail-generator remote:*)",
+      "Bash(git -C /Users/wadasatsuki/projects/blog-thumbnail-generator status)",
+      "Bash(git -C /Users/wadasatsuki/projects/blog-thumbnail-generator log --oneline -5)",
+      "Bash(git -C /Users/wadasatsuki/projects/blog-thumbnail-generator add CLAUDE.md)",
+      "Bash(git -C /Users/wadasatsuki/projects/blog-thumbnail-generator commit -m \"$\\(cat <<''EOF''\nAdd CLAUDE.md with project guidance for Claude Code\n\n🤖 Generated with [Claude Code]\\(https://claude.com/claude-code\\)\n\nCo-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>\nEOF\n\\)\")"
+    ]
+  }
+}
