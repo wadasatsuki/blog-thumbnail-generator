@@ -25,11 +25,13 @@ interface ScatteredText {
 function App() {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const fabricRef = useRef<fabric.Canvas | null>(null)
+  const previewContainerRef = useRef<HTMLDivElement>(null)
+  const [previewScale, setPreviewScale] = useState(0.5)
 
   const [title, setTitle] = useState('読書感想文')
   const [backgroundColor, setBackgroundColor] = useState('#ffffff')
   const [titleColor, setTitleColor] = useState('#6b46c1')
-  const [highlightColor, setHighlightColor] = useState('#48bb78')
+  const [highlightColor, setHighlightColor] = useState<string | null>('#48bb78')
   const [segmentColor, setSegmentColor] = useState('#6b46c1')
   const [content, setContent] = useState(`虚構と現実
 シュルレアリズム
@@ -51,6 +53,7 @@ function App() {
   const [segmentMaxSize, setSegmentMaxSize] = useState(40)
   const [fontFamily, setFontFamily] = useState(FONT_OPTIONS[0].value)
   const [scatteredPositions, setScatteredPositions] = useState<ScatteredText[]>([])
+  const [backgroundImage, setBackgroundImage] = useState<string | null>(null)
 
   const generateScatteredPositions = useCallback((segments: string[]): ScatteredText[] => {
     const centerX = CANVAS_WIDTH / 2
@@ -137,12 +140,32 @@ function App() {
     return positions
   }, [title, titleFontSize, segmentMaxSize, segmentMinSize])
 
-  const renderCanvas = useCallback(() => {
+  const renderCanvas = useCallback(async () => {
     if (!fabricRef.current) return
 
     const canvas = fabricRef.current
     canvas.clear()
-    canvas.backgroundColor = backgroundColor
+
+    if (backgroundImage) {
+      const img = await fabric.FabricImage.fromURL(backgroundImage)
+      const scaleX = CANVAS_WIDTH / (img.width || 1)
+      const scaleY = CANVAS_HEIGHT / (img.height || 1)
+      const scale = Math.max(scaleX, scaleY)
+      img.set({
+        scaleX: scale,
+        scaleY: scale,
+        left: CANVAS_WIDTH / 2,
+        top: CANVAS_HEIGHT / 2,
+        originX: 'center',
+        originY: 'center',
+        selectable: false,
+        evented: false,
+      })
+      canvas.add(img)
+      canvas.sendObjectToBack(img)
+    } else {
+      canvas.backgroundColor = backgroundColor
+    }
 
     scatteredPositions.forEach(({ text, fontSize, x, y, isVertical }) => {
       if (isVertical) {
@@ -173,33 +196,44 @@ function App() {
       }
     })
 
-    const titleWidth = title.length * titleFontSize * 0.85
-    const highlightHeight = titleFontSize * 0.5
-    const highlightRect = new fabric.Rect({
-      left: CANVAS_WIDTH / 2 - titleWidth / 2 - 40,
-      top: CANVAS_HEIGHT / 2 - highlightHeight / 2 + titleFontSize * 0.2,
-      width: titleWidth + 80,
-      height: highlightHeight,
-      fill: highlightColor,
-      selectable: true,
-    })
-    canvas.add(highlightRect)
+    const titleLines = title.split('\n')
+    const lineHeight = titleFontSize * 1.2
+    const totalTitleHeight = titleLines.length * lineHeight
+    const startY = CANVAS_HEIGHT / 2 - totalTitleHeight / 2 + lineHeight / 2
 
-    const titleText = new fabric.FabricText(title, {
-      left: CANVAS_WIDTH / 2,
-      top: CANVAS_HEIGHT / 2,
-      fontSize: titleFontSize,
-      fill: titleColor,
-      fontFamily: fontFamily,
-      fontWeight: 'bold',
-      originX: 'center',
-      originY: 'center',
-      selectable: true,
+    titleLines.forEach((line, index) => {
+      const lineWidth = line.length * titleFontSize * 0.85
+      const lineY = startY + index * lineHeight
+      const highlightHeight = titleFontSize * 0.5
+
+      if (highlightColor) {
+        const highlightRect = new fabric.Rect({
+          left: CANVAS_WIDTH / 2 - lineWidth / 2 - 50,
+          top: lineY - highlightHeight / 2 + titleFontSize * 0.2,
+          width: lineWidth + 100,
+          height: highlightHeight,
+          fill: highlightColor,
+          selectable: true,
+        })
+        canvas.add(highlightRect)
+      }
+
+      const titleText = new fabric.FabricText(line, {
+        left: CANVAS_WIDTH / 2,
+        top: lineY,
+        fontSize: titleFontSize,
+        fill: titleColor,
+        fontFamily: fontFamily,
+        fontWeight: 'bold',
+        originX: 'center',
+        originY: 'center',
+        selectable: true,
+      })
+      canvas.add(titleText)
     })
-    canvas.add(titleText)
 
     canvas.renderAll()
-  }, [backgroundColor, scatteredPositions, highlightColor, segmentColor, title, titleColor, titleFontSize, fontFamily])
+  }, [backgroundColor, backgroundImage, scatteredPositions, highlightColor, segmentColor, title, titleColor, titleFontSize, fontFamily])
 
   useEffect(() => {
     if (canvasRef.current && !fabricRef.current) {
@@ -214,6 +248,20 @@ function App() {
       fabricRef.current?.dispose()
       fabricRef.current = null
     }
+  }, [])
+
+  useEffect(() => {
+    const updateScale = () => {
+      if (previewContainerRef.current) {
+        const containerWidth = previewContainerRef.current.offsetWidth
+        const scale = Math.min(containerWidth / CANVAS_WIDTH, 0.5)
+        setPreviewScale(scale)
+      }
+    }
+
+    updateScale()
+    window.addEventListener('resize', updateScale)
+    return () => window.removeEventListener('resize', updateScale)
   }, [])
 
   useEffect(() => {
@@ -247,33 +295,61 @@ function App() {
     setScatteredPositions(generateScatteredPositions(segments))
   }
 
-  return (
-    <div className="min-h-screen bg-gray-100 p-8">
-      <div className="max-w-7xl mx-auto">
-        <h1 className="text-3xl font-bold text-gray-800 mb-8">Blog Thumbnail Generator</h1>
+  const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
 
-        <div className="flex gap-8">
+    const reader = new FileReader()
+    reader.onload = (event) => {
+      setBackgroundImage(event.target?.result as string)
+    }
+    reader.readAsDataURL(file)
+  }
+
+  const handleRemoveImage = () => {
+    setBackgroundImage(null)
+  }
+
+  return (
+    <div className="min-h-screen bg-gray-100 p-4 md:p-8">
+      <div className="max-w-7xl mx-auto">
+        <h1 className="text-2xl md:text-3xl font-bold text-gray-800 mb-4 md:mb-8">Blog Thumbnail Generator</h1>
+
+        <div className="flex flex-col lg:flex-row gap-4 md:gap-8">
           {/* Canvas Preview */}
-          <div className="flex-shrink-0">
-            <div className="bg-white p-4 rounded-lg shadow-lg">
-              <div className="border border-gray-300 overflow-hidden" style={{ width: CANVAS_WIDTH / 2, height: CANVAS_HEIGHT / 2 }}>
-                <div style={{ transform: 'scale(0.5)', transformOrigin: 'top left' }}>
+          <div className="w-full lg:flex-shrink-0 lg:w-auto">
+            <div className="bg-white p-3 md:p-4 rounded-lg shadow-lg">
+              <div
+                ref={previewContainerRef}
+                className="border border-gray-300 overflow-hidden w-full lg:w-auto"
+                style={{
+                  width: '100%',
+                  maxWidth: CANVAS_WIDTH / 2,
+                  height: CANVAS_HEIGHT * previewScale,
+                }}
+              >
+                <div
+                  style={{
+                    transform: `scale(${previewScale})`,
+                    transformOrigin: 'top left',
+                  }}
+                >
                   <canvas ref={canvasRef} />
                 </div>
               </div>
-              <p className="text-sm text-gray-500 mt-2">Preview (50% scale) - Actual size: {CANVAS_WIDTH}x{CANVAS_HEIGHT}px</p>
+              <p className="text-xs md:text-sm text-gray-500 mt-2">Actual size: {CANVAS_WIDTH}x{CANVAS_HEIGHT}px</p>
             </div>
 
-            <div className="mt-4 flex gap-4">
+            <div className="mt-4 flex flex-col sm:flex-row gap-2 md:gap-4">
               <button
                 onClick={handleChangeLayout}
-                className="px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium"
+                className="flex-1 sm:flex-none px-4 md:px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium text-sm md:text-base"
               >
                 Change Layout
               </button>
               <button
                 onClick={handleExport}
-                className="px-6 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors font-medium"
+                className="flex-1 sm:flex-none px-4 md:px-6 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors font-medium text-sm md:text-base"
               >
                 Export PNG
               </button>
@@ -281,18 +357,18 @@ function App() {
           </div>
 
           {/* Controls */}
-          <div className="flex-1 bg-white p-6 rounded-lg shadow-lg">
+          <div className="flex-1 bg-white p-4 md:p-6 rounded-lg shadow-lg">
             <h2 className="text-xl font-semibold mb-6">Settings</h2>
 
             <div className="space-y-6">
               {/* Title */}
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">Title</label>
-                <input
-                  type="text"
+                <label className="block text-sm font-medium text-gray-700 mb-2">Title (use Enter for line breaks)</label>
+                <textarea
                   value={title}
                   onChange={(e) => setTitle(e.target.value)}
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  rows={3}
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none"
                 />
               </div>
 
@@ -327,8 +403,32 @@ function App() {
                 </select>
               </div>
 
+              {/* Background */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Background Image</label>
+                <div className="flex gap-2">
+                  <label className="flex-1 px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition-colors cursor-pointer text-center">
+                    {backgroundImage ? 'Change Image' : 'Upload Image'}
+                    <input
+                      type="file"
+                      accept="image/*"
+                      onChange={handleImageUpload}
+                      className="hidden"
+                    />
+                  </label>
+                  {backgroundImage && (
+                    <button
+                      onClick={handleRemoveImage}
+                      className="px-4 py-2 bg-red-500 text-white rounded-lg hover:bg-red-600 transition-colors"
+                    >
+                      Remove
+                    </button>
+                  )}
+                </div>
+              </div>
+
               {/* Colors */}
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">Background Color</label>
                   <input
@@ -336,7 +436,11 @@ function App() {
                     value={backgroundColor}
                     onChange={(e) => setBackgroundColor(e.target.value)}
                     className="w-full h-10 rounded cursor-pointer"
+                    disabled={!!backgroundImage}
                   />
+                  {backgroundImage && (
+                    <p className="text-xs text-gray-400 mt-1">Remove image to use color</p>
+                  )}
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">Title Color</label>
@@ -349,12 +453,25 @@ function App() {
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">Highlight Color</label>
-                  <input
-                    type="color"
-                    value={highlightColor}
-                    onChange={(e) => setHighlightColor(e.target.value)}
-                    className="w-full h-10 rounded cursor-pointer"
-                  />
+                  <div className="flex gap-2 items-center">
+                    <input
+                      type="color"
+                      value={highlightColor || '#48bb78'}
+                      onChange={(e) => setHighlightColor(e.target.value)}
+                      className="flex-1 h-10 rounded cursor-pointer"
+                      disabled={!highlightColor}
+                    />
+                    <button
+                      onClick={() => setHighlightColor(highlightColor ? null : '#48bb78')}
+                      className={`px-3 py-2 text-sm rounded-lg transition-colors ${
+                        highlightColor
+                          ? 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                          : 'bg-blue-500 text-white hover:bg-blue-600'
+                      }`}
+                    >
+                      {highlightColor ? 'None' : 'Enable'}
+                    </button>
+                  </div>
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">Segment Color</label>
