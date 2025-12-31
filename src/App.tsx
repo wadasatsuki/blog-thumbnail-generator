@@ -1,8 +1,14 @@
 import { useEffect, useRef, useState, useCallback } from 'react'
 import * as fabric from 'fabric'
 
-const CANVAS_WIDTH = 1280
-const CANVAS_HEIGHT = 670
+const ASPECT_RATIOS = [
+  { id: '1:1', label: '1:1', width: 1080, height: 1080 },
+  { id: '4:5', label: '4:5', width: 1080, height: 1350 },
+  { id: '16:9', label: '16:9', width: 1280, height: 720 },
+] as const
+
+type AspectRatioId = typeof ASPECT_RATIOS[number]['id']
+type CropPosition = 'top' | 'center' | 'bottom' | 'left' | 'right'
 
 const FONT_OPTIONS = [
   { value: 'Hiragino Kaku Gothic ProN, sans-serif', label: 'Hiragino Kaku Gothic ProN' },
@@ -25,29 +31,30 @@ interface ScatteredText {
 function App() {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const fabricRef = useRef<fabric.Canvas | null>(null)
-  const previewContainerRef = useRef<HTMLDivElement>(null)
-  const [previewScale, setPreviewScale] = useState(0.5)
+  const [previewImageUrl, setPreviewImageUrl] = useState<string | null>(null)
 
-  const [title, setTitle] = useState('読書感想文')
+  const [aspectRatio, setAspectRatio] = useState<AspectRatioId>('16:9')
+  const [cropPosition, setCropPosition] = useState<CropPosition>('center')
+
+  const currentRatio = ASPECT_RATIOS.find(r => r.id === aspectRatio) || ASPECT_RATIOS[2]
+  const CANVAS_WIDTH = currentRatio.width
+  const CANVAS_HEIGHT = currentRatio.height
+
+  const [title, setTitle] = useState('Sample Title')
   const [backgroundColor, setBackgroundColor] = useState('#ffffff')
   const [titleColor, setTitleColor] = useState('#6b46c1')
   const [highlightColor, setHighlightColor] = useState<string | null>('#48bb78')
   const [segmentColor, setSegmentColor] = useState('#6b46c1')
-  const [content, setContent] = useState(`虚構と現実
-シュルレアリズム
-現実と現実が混ざり合う
-酩酊感
-逃げる希望
-気分悪くなる
-吐きそうな気持ちにもなった
-イノチ
-多様性を許容する
-誰が誰で誰が誰？
-息苦しい
-私は資本主義に合意した覚えない
-あ、共感してすみません
-エゴ
-他人`)
+  const [content, setContent] = useState(`Design
+Creative
+Inspiration
+Ideas
+Style
+Modern
+Minimal
+Concept
+Vision
+Art`)
   const [titleFontSize, setTitleFontSize] = useState(120)
   const [segmentMinSize, setSegmentMinSize] = useState(16)
   const [segmentMaxSize, setSegmentMaxSize] = useState(40)
@@ -138,7 +145,7 @@ function App() {
     })
 
     return positions
-  }, [title, titleFontSize, segmentMaxSize, segmentMinSize])
+  }, [title, titleFontSize, segmentMaxSize, segmentMinSize, CANVAS_WIDTH, CANVAS_HEIGHT])
 
   const renderCanvas = useCallback(async () => {
     if (!fabricRef.current) return
@@ -148,14 +155,39 @@ function App() {
 
     if (backgroundImage) {
       const img = await fabric.FabricImage.fromURL(backgroundImage)
-      const scaleX = CANVAS_WIDTH / (img.width || 1)
-      const scaleY = CANVAS_HEIGHT / (img.height || 1)
+      const imgWidth = img.width || 1
+      const imgHeight = img.height || 1
+      const scaleX = CANVAS_WIDTH / imgWidth
+      const scaleY = CANVAS_HEIGHT / imgHeight
       const scale = Math.max(scaleX, scaleY)
+
+      const scaledWidth = imgWidth * scale
+      const scaledHeight = imgHeight * scale
+
+      let left = CANVAS_WIDTH / 2
+      let top = CANVAS_HEIGHT / 2
+
+      if (scaledWidth > CANVAS_WIDTH) {
+        if (cropPosition === 'left') {
+          left = scaledWidth / 2
+        } else if (cropPosition === 'right') {
+          left = CANVAS_WIDTH - scaledWidth / 2
+        }
+      }
+
+      if (scaledHeight > CANVAS_HEIGHT) {
+        if (cropPosition === 'top') {
+          top = scaledHeight / 2
+        } else if (cropPosition === 'bottom') {
+          top = CANVAS_HEIGHT - scaledHeight / 2
+        }
+      }
+
       img.set({
         scaleX: scale,
         scaleY: scale,
-        left: CANVAS_WIDTH / 2,
-        top: CANVAS_HEIGHT / 2,
+        left: left,
+        top: top,
         originX: 'center',
         originY: 'center',
         selectable: false,
@@ -233,10 +265,26 @@ function App() {
     })
 
     canvas.renderAll()
-  }, [backgroundColor, backgroundImage, scatteredPositions, highlightColor, segmentColor, title, titleColor, titleFontSize, fontFamily])
+
+    setTimeout(() => {
+      if (fabricRef.current) {
+        const dataUrl = fabricRef.current.toDataURL({
+          format: 'png',
+          quality: 1,
+          multiplier: 1,
+        })
+        setPreviewImageUrl(dataUrl)
+      }
+    }, 100)
+  }, [backgroundColor, backgroundImage, cropPosition, scatteredPositions, highlightColor, segmentColor, title, titleColor, titleFontSize, fontFamily, CANVAS_WIDTH, CANVAS_HEIGHT])
 
   useEffect(() => {
-    if (canvasRef.current && !fabricRef.current) {
+    if (fabricRef.current) {
+      fabricRef.current.dispose()
+      fabricRef.current = null
+    }
+
+    if (canvasRef.current) {
       fabricRef.current = new fabric.Canvas(canvasRef.current, {
         width: CANVAS_WIDTH,
         height: CANVAS_HEIGHT,
@@ -248,21 +296,7 @@ function App() {
       fabricRef.current?.dispose()
       fabricRef.current = null
     }
-  }, [])
-
-  useEffect(() => {
-    const updateScale = () => {
-      if (previewContainerRef.current) {
-        const containerWidth = previewContainerRef.current.offsetWidth
-        const scale = Math.min(containerWidth / CANVAS_WIDTH, 0.5)
-        setPreviewScale(scale)
-      }
-    }
-
-    updateScale()
-    window.addEventListener('resize', updateScale)
-    return () => window.removeEventListener('resize', updateScale)
-  }, [])
+  }, [CANVAS_WIDTH, CANVAS_HEIGHT])
 
   useEffect(() => {
     const segments = content.split('\n').filter(s => s.trim())
@@ -320,24 +354,34 @@ function App() {
           <div className="w-full lg:flex-shrink-0 lg:w-auto">
             <div className="bg-white p-3 md:p-4 rounded-lg shadow-lg">
               <div
-                ref={previewContainerRef}
                 className="border border-gray-300 overflow-hidden w-full lg:w-auto"
                 style={{
                   width: '100%',
                   maxWidth: CANVAS_WIDTH / 2,
-                  height: CANVAS_HEIGHT * previewScale,
                 }}
               >
-                <div
-                  style={{
-                    transform: `scale(${previewScale})`,
-                    transformOrigin: 'top left',
-                  }}
-                >
-                  <canvas ref={canvasRef} />
-                </div>
+                {previewImageUrl ? (
+                  <img
+                    src={previewImageUrl}
+                    alt="Thumbnail preview"
+                    className="w-full h-auto"
+                    style={{ display: 'block' }}
+                  />
+                ) : (
+                  <div
+                    style={{ aspectRatio: `${CANVAS_WIDTH}/${CANVAS_HEIGHT}` }}
+                    className="bg-gray-100 flex items-center justify-center"
+                  >
+                    <span className="text-gray-400">Loading...</span>
+                  </div>
+                )}
               </div>
-              <p className="text-xs md:text-sm text-gray-500 mt-2">Actual size: {CANVAS_WIDTH}x{CANVAS_HEIGHT}px</p>
+              <div className="hidden">
+                <canvas ref={canvasRef} />
+              </div>
+              <p className="text-xs md:text-sm text-gray-500 mt-2">
+                Long-press image to save • Actual size: {CANVAS_WIDTH}x{CANVAS_HEIGHT}px
+              </p>
             </div>
 
             <div className="mt-4 flex flex-col sm:flex-row gap-2 md:gap-4">
@@ -361,6 +405,30 @@ function App() {
             <h2 className="text-xl font-semibold mb-6">Settings</h2>
 
             <div className="space-y-6">
+              {/* Aspect Ratio */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Aspect Ratio</label>
+                <div className="flex gap-2">
+                  {ASPECT_RATIOS.map((ratio) => (
+                    <button
+                      key={ratio.id}
+                      onClick={() => {
+                        setAspectRatio(ratio.id)
+                        setScatteredPositions([])
+                      }}
+                      className={`flex-1 px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
+                        aspectRatio === ratio.id
+                          ? 'bg-blue-600 text-white'
+                          : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                      }`}
+                    >
+                      <div>{ratio.label}</div>
+                      <div className="text-xs opacity-75">{ratio.width}×{ratio.height}</div>
+                    </button>
+                  ))}
+                </div>
+              </div>
+
               {/* Title */}
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">Title (use Enter for line breaks)</label>
@@ -425,6 +493,41 @@ function App() {
                     </button>
                   )}
                 </div>
+                {backgroundImage && (
+                  <div className="mt-3">
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Crop Position</label>
+                    <div className="flex gap-2">
+                      {(['left', 'center', 'right'] as const).map((pos) => (
+                        <button
+                          key={pos}
+                          onClick={() => setCropPosition(pos)}
+                          className={`flex-1 px-3 py-1.5 rounded text-sm transition-colors ${
+                            cropPosition === pos
+                              ? 'bg-blue-600 text-white'
+                              : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                          }`}
+                        >
+                          {pos.charAt(0).toUpperCase() + pos.slice(1)}
+                        </button>
+                      ))}
+                    </div>
+                    <div className="flex gap-2 mt-2">
+                      {(['top', 'center', 'bottom'] as const).map((pos) => (
+                        <button
+                          key={pos}
+                          onClick={() => setCropPosition(pos)}
+                          className={`flex-1 px-3 py-1.5 rounded text-sm transition-colors ${
+                            cropPosition === pos
+                              ? 'bg-blue-600 text-white'
+                              : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                          }`}
+                        >
+                          {pos.charAt(0).toUpperCase() + pos.slice(1)}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
 
               {/* Colors */}
