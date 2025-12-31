@@ -8,7 +8,6 @@ const ASPECT_RATIOS = [
 ] as const
 
 type AspectRatioId = typeof ASPECT_RATIOS[number]['id']
-type CropPosition = 'top' | 'center' | 'bottom' | 'left' | 'right'
 
 const FONT_OPTIONS = [
   { value: 'Hiragino Kaku Gothic ProN, sans-serif', label: 'Hiragino Kaku Gothic ProN' },
@@ -34,7 +33,9 @@ function App() {
   const [previewImageUrl, setPreviewImageUrl] = useState<string | null>(null)
 
   const [aspectRatio, setAspectRatio] = useState<AspectRatioId>('16:9')
-  const [cropPosition, setCropPosition] = useState<CropPosition>('center')
+  const [imagePosition, setImagePosition] = useState({ x: 0, y: 0 })
+  const [imageZoom, setImageZoom] = useState(1)
+  const [naturalImageSize, setNaturalImageSize] = useState({ width: 0, height: 0 })
 
   const currentRatio = ASPECT_RATIOS.find(r => r.id === aspectRatio) || ASPECT_RATIOS[2]
   const CANVAS_WIDTH = currentRatio.width
@@ -153,41 +154,18 @@ Art`)
     const canvas = fabricRef.current
     canvas.clear()
 
-    if (backgroundImage) {
+    if (backgroundImage && naturalImageSize.width > 0) {
       const img = await fabric.FabricImage.fromURL(backgroundImage)
-      const imgWidth = img.width || 1
-      const imgHeight = img.height || 1
-      const scaleX = CANVAS_WIDTH / imgWidth
-      const scaleY = CANVAS_HEIGHT / imgHeight
-      const scale = Math.max(scaleX, scaleY)
-
-      const scaledWidth = imgWidth * scale
-      const scaledHeight = imgHeight * scale
-
-      let left = CANVAS_WIDTH / 2
-      let top = CANVAS_HEIGHT / 2
-
-      if (scaledWidth > CANVAS_WIDTH) {
-        if (cropPosition === 'left') {
-          left = scaledWidth / 2
-        } else if (cropPosition === 'right') {
-          left = CANVAS_WIDTH - scaledWidth / 2
-        }
-      }
-
-      if (scaledHeight > CANVAS_HEIGHT) {
-        if (cropPosition === 'top') {
-          top = scaledHeight / 2
-        } else if (cropPosition === 'bottom') {
-          top = CANVAS_HEIGHT - scaledHeight / 2
-        }
-      }
+      const baseScaleX = CANVAS_WIDTH / naturalImageSize.width
+      const baseScaleY = CANVAS_HEIGHT / naturalImageSize.height
+      const baseScale = Math.max(baseScaleX, baseScaleY)
+      const scale = baseScale * imageZoom
 
       img.set({
         scaleX: scale,
         scaleY: scale,
-        left: left,
-        top: top,
+        left: CANVAS_WIDTH / 2 + imagePosition.x,
+        top: CANVAS_HEIGHT / 2 + imagePosition.y,
         originX: 'center',
         originY: 'center',
         selectable: false,
@@ -276,7 +254,7 @@ Art`)
         setPreviewImageUrl(dataUrl)
       }
     }, 100)
-  }, [backgroundColor, backgroundImage, cropPosition, scatteredPositions, highlightColor, segmentColor, title, titleColor, titleFontSize, fontFamily, CANVAS_WIDTH, CANVAS_HEIGHT])
+  }, [backgroundColor, backgroundImage, imagePosition, imageZoom, naturalImageSize, scatteredPositions, highlightColor, segmentColor, title, titleColor, titleFontSize, fontFamily, CANVAS_WIDTH, CANVAS_HEIGHT])
 
   useEffect(() => {
     if (fabricRef.current) {
@@ -335,13 +313,24 @@ Art`)
 
     const reader = new FileReader()
     reader.onload = (event) => {
-      setBackgroundImage(event.target?.result as string)
+      const dataUrl = event.target?.result as string
+      const img = new Image()
+      img.onload = () => {
+        setNaturalImageSize({ width: img.width, height: img.height })
+        setImagePosition({ x: 0, y: 0 })
+        setImageZoom(1)
+        setBackgroundImage(dataUrl)
+      }
+      img.src = dataUrl
     }
     reader.readAsDataURL(file)
   }
 
   const handleRemoveImage = () => {
     setBackgroundImage(null)
+    setNaturalImageSize({ width: 0, height: 0 })
+    setImagePosition({ x: 0, y: 0 })
+    setImageZoom(1)
   }
 
   return (
@@ -493,39 +482,97 @@ Art`)
                     </button>
                   )}
                 </div>
-                {backgroundImage && (
-                  <div className="mt-3">
-                    <label className="block text-sm font-medium text-gray-700 mb-2">Crop Position</label>
-                    <div className="flex gap-2">
-                      {(['left', 'center', 'right'] as const).map((pos) => (
-                        <button
-                          key={pos}
-                          onClick={() => setCropPosition(pos)}
-                          className={`flex-1 px-3 py-1.5 rounded text-sm transition-colors ${
-                            cropPosition === pos
-                              ? 'bg-blue-600 text-white'
-                              : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                          }`}
-                        >
-                          {pos.charAt(0).toUpperCase() + pos.slice(1)}
-                        </button>
-                      ))}
+                {backgroundImage && naturalImageSize.width > 0 && (
+                  <div className="mt-3 space-y-3">
+                    <label className="block text-sm font-medium text-gray-700">Adjust Image (drag to move)</label>
+                    <div
+                      className="relative overflow-hidden bg-gray-200 rounded-lg cursor-move select-none touch-none"
+                      style={{
+                        width: '100%',
+                        aspectRatio: `${CANVAS_WIDTH}/${CANVAS_HEIGHT}`,
+                      }}
+                      onMouseDown={(e) => {
+                        const startX = e.clientX
+                        const startY = e.clientY
+                        const startPos = { ...imagePosition }
+                        const rect = e.currentTarget.getBoundingClientRect()
+                        const scale = CANVAS_WIDTH / rect.width
+
+                        const handleMouseMove = (moveEvent: MouseEvent) => {
+                          const dx = (moveEvent.clientX - startX) * scale
+                          const dy = (moveEvent.clientY - startY) * scale
+                          setImagePosition({ x: startPos.x + dx, y: startPos.y + dy })
+                        }
+
+                        const handleMouseUp = () => {
+                          window.removeEventListener('mousemove', handleMouseMove)
+                          window.removeEventListener('mouseup', handleMouseUp)
+                        }
+
+                        window.addEventListener('mousemove', handleMouseMove)
+                        window.addEventListener('mouseup', handleMouseUp)
+                      }}
+                      onTouchStart={(e) => {
+                        const touch = e.touches[0]
+                        const startX = touch.clientX
+                        const startY = touch.clientY
+                        const startPos = { ...imagePosition }
+                        const rect = e.currentTarget.getBoundingClientRect()
+                        const scale = CANVAS_WIDTH / rect.width
+
+                        const handleTouchMove = (moveEvent: TouchEvent) => {
+                          const moveTouch = moveEvent.touches[0]
+                          const dx = (moveTouch.clientX - startX) * scale
+                          const dy = (moveTouch.clientY - startY) * scale
+                          setImagePosition({ x: startPos.x + dx, y: startPos.y + dy })
+                        }
+
+                        const handleTouchEnd = () => {
+                          window.removeEventListener('touchmove', handleTouchMove)
+                          window.removeEventListener('touchend', handleTouchEnd)
+                        }
+
+                        window.addEventListener('touchmove', handleTouchMove, { passive: true })
+                        window.addEventListener('touchend', handleTouchEnd)
+                      }}
+                    >
+                      <div
+                        className="absolute"
+                        style={{
+                          width: `${(naturalImageSize.width / CANVAS_WIDTH) * 100 * imageZoom}%`,
+                          height: `${(naturalImageSize.height / CANVAS_HEIGHT) * 100 * imageZoom}%`,
+                          left: `calc(50% + ${(imagePosition.x / CANVAS_WIDTH) * 100}%)`,
+                          top: `calc(50% + ${(imagePosition.y / CANVAS_HEIGHT) * 100}%)`,
+                          transform: 'translate(-50%, -50%)',
+                          backgroundImage: `url(${backgroundImage})`,
+                          backgroundSize: 'contain',
+                          backgroundPosition: 'center',
+                          backgroundRepeat: 'no-repeat',
+                          minWidth: '100%',
+                          minHeight: '100%',
+                        }}
+                      />
+                      <div className="absolute inset-0 border-2 border-dashed border-white/50 pointer-events-none" />
                     </div>
-                    <div className="flex gap-2 mt-2">
-                      {(['top', 'center', 'bottom'] as const).map((pos) => (
-                        <button
-                          key={pos}
-                          onClick={() => setCropPosition(pos)}
-                          className={`flex-1 px-3 py-1.5 rounded text-sm transition-colors ${
-                            cropPosition === pos
-                              ? 'bg-blue-600 text-white'
-                              : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                          }`}
-                        >
-                          {pos.charAt(0).toUpperCase() + pos.slice(1)}
-                        </button>
-                      ))}
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        Zoom: {Math.round(imageZoom * 100)}%
+                      </label>
+                      <input
+                        type="range"
+                        min="100"
+                        max="300"
+                        value={imageZoom * 100}
+                        onChange={(e) => setImageZoom(Number(e.target.value) / 100)}
+                        className="w-full"
+                      />
                     </div>
+                    <button
+                      onClick={() => { setImagePosition({ x: 0, y: 0 }); setImageZoom(1); }}
+                      className="text-sm text-blue-600 hover:text-blue-800"
+                    >
+                      Reset Position & Zoom
+                    </button>
                   </div>
                 )}
               </div>
