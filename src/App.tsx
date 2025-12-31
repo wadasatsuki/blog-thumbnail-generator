@@ -59,19 +59,36 @@ function App() {
     const titleHeight = titleFontSize * 1.2
 
     const exclusionZone = {
-      left: centerX - titleWidth / 2 - 40,
-      right: centerX + titleWidth / 2 + 40,
+      left: centerX - titleWidth / 2 - 60,
+      right: centerX + titleWidth / 2 + 60,
       top: centerY - titleHeight / 2 - 40,
       bottom: centerY + titleHeight / 2 + 40,
     }
 
     const positions: ScatteredText[] = []
-    const padding = 20
-    const frameWidth = 120
+    const padding = 15
+    const frameThickness = 80
 
-    segments.forEach((text) => {
+    const totalSegments = segments.length
+    const topCount = Math.ceil(totalSegments * 0.3)
+    const bottomCount = Math.ceil(totalSegments * 0.3)
+    const leftCount = Math.ceil(totalSegments * 0.2)
+
+    segments.forEach((text, index) => {
       const fontSize = Math.floor(Math.random() * (segmentMaxSize - segmentMinSize + 1)) + segmentMinSize
-      const isVertical = Math.random() > 0.7
+
+      let zone: number
+      if (index < topCount) {
+        zone = 0
+      } else if (index < topCount + bottomCount) {
+        zone = 1
+      } else if (index < topCount + bottomCount + leftCount) {
+        zone = 2
+      } else {
+        zone = 3
+      }
+
+      const isVertical = zone === 2 || zone === 3
 
       let x = 0
       let y = 0
@@ -79,24 +96,22 @@ function App() {
       const maxAttempts = 100
 
       do {
-        const zone = Math.floor(Math.random() * 4)
-
         switch (zone) {
           case 0:
             x = padding + Math.random() * (CANVAS_WIDTH - padding * 2)
-            y = padding + Math.random() * frameWidth
+            y = padding + Math.random() * frameThickness
             break
           case 1:
             x = padding + Math.random() * (CANVAS_WIDTH - padding * 2)
-            y = CANVAS_HEIGHT - padding - frameWidth + Math.random() * frameWidth
+            y = CANVAS_HEIGHT - padding - frameThickness + Math.random() * frameThickness
             break
           case 2:
-            x = padding + Math.random() * frameWidth
-            y = padding + Math.random() * (CANVAS_HEIGHT - padding * 2)
+            x = padding + Math.random() * frameThickness
+            y = padding + frameThickness + Math.random() * (CANVAS_HEIGHT - padding * 2 - frameThickness * 2)
             break
           default:
-            x = CANVAS_WIDTH - padding - frameWidth + Math.random() * frameWidth
-            y = padding + Math.random() * (CANVAS_HEIGHT - padding * 2)
+            x = CANVAS_WIDTH - padding - frameThickness + Math.random() * frameThickness
+            y = padding + frameThickness + Math.random() * (CANVAS_HEIGHT - padding * 2 - frameThickness * 2)
             break
         }
         attempts++
@@ -161,9 +176,9 @@ function App() {
     const titleWidth = title.length * titleFontSize * 0.85
     const highlightHeight = titleFontSize * 0.5
     const highlightRect = new fabric.Rect({
-      left: CANVAS_WIDTH / 2 - titleWidth / 2 - 20,
+      left: CANVAS_WIDTH / 2 - titleWidth / 2 - 40,
       top: CANVAS_HEIGHT / 2 - highlightHeight / 2 + titleFontSize * 0.2,
-      width: titleWidth + 40,
+      width: titleWidth + 80,
       height: highlightHeight,
       fill: highlightColor,
       selectable: true,
