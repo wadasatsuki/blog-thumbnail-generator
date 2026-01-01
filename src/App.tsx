@@ -47,25 +47,30 @@ function App() {
   const CANVAS_WIDTH = currentRatio.width
   const CANVAS_HEIGHT = currentRatio.height
 
-  const [title, setTitle] = useState('#映画鑑賞記録2025')
+  const [title, setTitle] = useState('読書感想文')
   const [backgroundColor, setBackgroundColor] = useState('#ffffff')
-  const [titleColor, setTitleColor] = useState('#ffffff')
-  const [highlightColor, setHighlightColor] = useState<string | null>('#48bb78')
-  const [segmentColor, setSegmentColor] = useState('#ffffff')
-  const [content, setContent] = useState(`Design
-Creative
-Inspiration
-Ideas
-Style
-Modern
-Minimal
-Concept
-Vision
-Art`)
-  const [titleFontSize, setTitleFontSize] = useState(100)
-  const [segmentMinSize, setSegmentMinSize] = useState(30)
-  const [segmentMaxSize, setSegmentMaxSize] = useState(66)
-  const [fontFamily, setFontFamily] = useState(FONT_OPTIONS[0].value)
+  const [titleColor, setTitleColor] = useState('#6125f3')
+  const [highlightColor, setHighlightColor] = useState<string | null>('#7bf580')
+  const [segmentColor, setSegmentColor] = useState('#6125f3')
+  const [content, setContent] = useState(`虚構と現実
+シュルレアリスム
+現実と現実が混ざり合う
+酩酊感
+誰が誰で誰が誰?
+息苦しい
+逃げる希望
+気分悪くなる
+吐きそうな気持ちになったけど、
+なぜか楽しい
+エゴと他人
+私は資本主義に合意した覚えない
+あ、共感してすみません
+イノチダイジニ
+多様性を許容する`)
+  const [titleFontSize, setTitleFontSize] = useState(200)
+  const [segmentMinSize, setSegmentMinSize] = useState(20)
+  const [segmentMaxSize, setSegmentMaxSize] = useState(50)
+  const [fontFamily, setFontFamily] = useState(FONT_OPTIONS[1].value)
   const [scatteredPositions, setScatteredPositions] = useState<ScatteredText[]>([])
   const [backgroundImage, setBackgroundImage] = useState<string | null>(null)
 
@@ -87,52 +92,203 @@ Art`)
     const padding = 30
     const frameThickness = CANVAS_HEIGHT * 0.35 // Use more of the canvas
 
-    const totalSegments = segments.length
-    // Distribute evenly across all four zones
-    const perZone = Math.ceil(totalSegments / 4)
+    // Divide canvas into grid sections for even distribution
+    const gridCols = 4
+    const gridRows = 3
+    const sectionWidth = CANVAS_WIDTH / gridCols
+    const sectionHeight = CANVAS_HEIGHT / gridRows
+    const sectionCounts: number[][] = Array(gridRows).fill(null).map(() => Array(gridCols).fill(0))
 
-    segments.forEach((text, index) => {
+    // Get which grid section a position falls into
+    const getSection = (x: number, y: number) => {
+      const col = Math.min(Math.floor(x / sectionWidth), gridCols - 1)
+      const row = Math.min(Math.floor(y / sectionHeight), gridRows - 1)
+      return { row, col }
+    }
+
+    // Find the least populated section in a zone
+    const getLeastPopulatedSection = (zone: number): { targetRow: number; targetCol: number } => {
+      let minCount = Infinity
+      let candidates: { row: number; col: number }[] = []
+
+      switch (zone) {
+        case 0: // Top zone - row 0
+          for (let col = 0; col < gridCols; col++) {
+            if (sectionCounts[0][col] < minCount) {
+              minCount = sectionCounts[0][col]
+              candidates = [{ row: 0, col }]
+            } else if (sectionCounts[0][col] === minCount) {
+              candidates.push({ row: 0, col })
+            }
+          }
+          break
+        case 1: // Bottom zone - row 2
+          for (let col = 0; col < gridCols; col++) {
+            if (sectionCounts[gridRows - 1][col] < minCount) {
+              minCount = sectionCounts[gridRows - 1][col]
+              candidates = [{ row: gridRows - 1, col }]
+            } else if (sectionCounts[gridRows - 1][col] === minCount) {
+              candidates.push({ row: gridRows - 1, col })
+            }
+          }
+          break
+        case 2: // Left zone - col 0
+          for (let row = 0; row < gridRows; row++) {
+            if (sectionCounts[row][0] < minCount) {
+              minCount = sectionCounts[row][0]
+              candidates = [{ row, col: 0 }]
+            } else if (sectionCounts[row][0] === minCount) {
+              candidates.push({ row, col: 0 })
+            }
+          }
+          break
+        default: // Right zone - col 3
+          for (let row = 0; row < gridRows; row++) {
+            if (sectionCounts[row][gridCols - 1] < minCount) {
+              minCount = sectionCounts[row][gridCols - 1]
+              candidates = [{ row, col: gridCols - 1 }]
+            } else if (sectionCounts[row][gridCols - 1] === minCount) {
+              candidates.push({ row, col: gridCols - 1 })
+            }
+          }
+          break
+      }
+
+      const chosen = candidates[Math.floor(Math.random() * candidates.length)]
+      return { targetRow: chosen.row, targetCol: chosen.col }
+    }
+
+    // Helper to get bounding box of a text segment
+    const getBoundingBox = (pos: { x: number; y: number; text: string; fontSize: number; isVertical: boolean }) => {
+      const charWidth = pos.fontSize * 0.8
+      const charHeight = pos.fontSize * 1.2
+      if (pos.isVertical) {
+        return {
+          left: pos.x,
+          right: pos.x + charWidth,
+          top: pos.y,
+          bottom: pos.y + pos.text.length * charHeight,
+        }
+      } else {
+        return {
+          left: pos.x,
+          right: pos.x + pos.text.length * charWidth,
+          top: pos.y,
+          bottom: pos.y + charHeight,
+        }
+      }
+    }
+
+    // Check if two bounding boxes overlap
+    const boxesOverlap = (a: ReturnType<typeof getBoundingBox>, b: ReturnType<typeof getBoundingBox>) => {
+      return !(a.right < b.left || a.left > b.right || a.bottom < b.top || a.top > b.bottom)
+    }
+
+    // Check if candidate overlaps with title
+    const overlapsWithTitle = (candidate: { x: number; y: number; text: string; fontSize: number; isVertical: boolean }) => {
+      const candidateBox = getBoundingBox(candidate)
+      return boxesOverlap(candidateBox, exclusionZone)
+    }
+
+    // Count how many existing positions overlap with a candidate position
+    const countOverlaps = (candidate: { x: number; y: number; text: string; fontSize: number; isVertical: boolean }) => {
+      const candidateBox = getBoundingBox(candidate)
+      let count = 0
+      for (const pos of positions) {
+        const posBox = getBoundingBox(pos)
+        if (boxesOverlap(candidateBox, posBox)) {
+          count++
+        }
+      }
+      return count
+    }
+
+    // Shuffle segments for random distribution
+    const shuffledIndices = segments.map((_, i) => i).sort(() => Math.random() - 0.5)
+
+    segments.forEach((text, originalIndex) => {
       const fontSize = Math.floor(Math.random() * (segmentMaxSize - segmentMinSize + 1)) + segmentMinSize
 
-      // Evenly distribute across 4 zones
-      const zone = Math.floor(index / perZone) % 4
+      // Use round-robin to evenly distribute across 4 zones
+      const shuffledPosition = shuffledIndices.indexOf(originalIndex)
+      const zone = shuffledPosition % 4
 
-      // Only vertical for left/right zones, with some randomness
-      const isVertical = (zone === 2 || zone === 3) && Math.random() > 0.3
+      // Vertical for left/right zones, horizontal for top/bottom zones
+      const isVertical = zone === 2 || zone === 3
+
+      // Get target section for even distribution
+      const { targetRow, targetCol } = getLeastPopulatedSection(zone)
 
       let x = 0
       let y = 0
       let attempts = 0
-      const maxAttempts = 100
+      const maxAttempts = 150
+      let overlapCount = 0
+
+      // First try to find a position with no overlaps
+      let bestX = 0
+      let bestY = 0
+      let bestOverlapCount = Infinity
 
       do {
+        // Place within target section with some randomness
+        const sectionX = targetCol * sectionWidth
+        const sectionY = targetRow * sectionHeight
+
         switch (zone) {
-          case 0: // Top zone - spread across full width
-            x = padding + Math.random() * (CANVAS_WIDTH - padding * 2)
-            y = padding + Math.random() * frameThickness
+          case 0: // Top zone
+            x = sectionX + padding + Math.random() * (sectionWidth - padding * 2)
+            y = padding + Math.random() * Math.min(frameThickness, sectionHeight - padding)
             break
-          case 1: // Bottom zone - spread across full width
-            x = padding + Math.random() * (CANVAS_WIDTH - padding * 2)
+          case 1: // Bottom zone
+            x = sectionX + padding + Math.random() * (sectionWidth - padding * 2)
             y = CANVAS_HEIGHT - padding - frameThickness + Math.random() * frameThickness
             break
-          case 2: // Left zone - spread across full height
+          case 2: // Left zone
             x = padding + Math.random() * (frameThickness * 0.6)
-            y = padding + Math.random() * (CANVAS_HEIGHT - padding * 2)
+            y = sectionY + padding + Math.random() * (sectionHeight - padding * 2)
             break
-          default: // Right zone - spread across full height
+          default: // Right zone
             x = CANVAS_WIDTH - padding - frameThickness * 0.6 + Math.random() * (frameThickness * 0.6)
-            y = padding + Math.random() * (CANVAS_HEIGHT - padding * 2)
+            y = sectionY + padding + Math.random() * (sectionHeight - padding * 2)
             break
         }
         attempts++
 
+        // Skip if overlaps with title
+        if (overlapsWithTitle({ x, y, text, fontSize, isVertical })) {
+          continue
+        }
+
+        // Count overlaps with existing segments
+        overlapCount = countOverlaps({ x, y, text, fontSize, isVertical })
+
+        // Track best position (prefer no overlaps, then fewer overlaps)
+        if (overlapCount < bestOverlapCount) {
+          bestOverlapCount = overlapCount
+          bestX = x
+          bestY = y
+        }
+
+        // Found a position with no overlaps - use it
+        if (overlapCount === 0) break
+
         if (attempts >= maxAttempts) break
       } while (
-        x > exclusionZone.left &&
-        x < exclusionZone.right &&
-        y > exclusionZone.top &&
-        y < exclusionZone.bottom
+        overlapsWithTitle({ x, y, text, fontSize, isVertical }) ||
+        overlapCount > 1 // Max 2 lines overlapping (this segment + 1 other)
       )
+
+      // Use the best position found
+      if (bestOverlapCount < overlapCount) {
+        x = bestX
+        y = bestY
+        overlapCount = bestOverlapCount
+      }
+
+      // Update section count
+      const { row, col } = getSection(x, y)
+      sectionCounts[row][col]++
 
       positions.push({
         text,
@@ -286,14 +442,6 @@ Art`)
     renderCanvas()
   }, [renderCanvas])
 
-  useEffect(() => {
-    const img = new Image()
-    img.onload = () => {
-      setNaturalImageSize({ width: img.width, height: img.height })
-      setBackgroundImage('/sample_image.jpg')
-    }
-    img.src = '/sample_image.jpg'
-  }, [])
 
   const handleExport = () => {
     if (!fabricRef.current) return
@@ -472,7 +620,7 @@ Art`)
                 <input
                   type="range"
                   min="60"
-                  max="180"
+                  max="500"
                   value={titleFontSize}
                   onChange={(e) => setTitleFontSize(Number(e.target.value))}
                   className="w-full"
@@ -575,12 +723,20 @@ Art`)
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">Segment Color</label>
-                  <input
-                    type="color"
-                    value={segmentColor}
-                    onChange={(e) => setSegmentColor(e.target.value)}
-                    className="w-full h-10 rounded cursor-pointer"
-                  />
+                  <div className="flex gap-2 items-center">
+                    <input
+                      type="color"
+                      value={segmentColor}
+                      onChange={(e) => setSegmentColor(e.target.value)}
+                      className="flex-1 h-10 rounded cursor-pointer"
+                    />
+                    <button
+                      onClick={() => setSegmentColor(titleColor)}
+                      className="px-3 py-2 text-sm bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition-colors whitespace-nowrap"
+                    >
+                      Link to Title Color
+                    </button>
+                  </div>
                 </div>
               </div>
 
