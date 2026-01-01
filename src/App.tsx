@@ -37,15 +37,21 @@ function App() {
   const [imageZoom, setImageZoom] = useState(1)
   const [naturalImageSize, setNaturalImageSize] = useState({ width: 0, height: 0 })
 
+  const [showCropModal, setShowCropModal] = useState(false)
+  const [tempImageUrl, setTempImageUrl] = useState<string | null>(null)
+  const [tempImageSize, setTempImageSize] = useState({ width: 0, height: 0 })
+  const [tempPosition, setTempPosition] = useState({ x: 0, y: 0 })
+  const [tempZoom, setTempZoom] = useState(1)
+
   const currentRatio = ASPECT_RATIOS.find(r => r.id === aspectRatio) || ASPECT_RATIOS[2]
   const CANVAS_WIDTH = currentRatio.width
   const CANVAS_HEIGHT = currentRatio.height
 
-  const [title, setTitle] = useState('Sample Title')
+  const [title, setTitle] = useState('#映画鑑賞記録2025')
   const [backgroundColor, setBackgroundColor] = useState('#ffffff')
-  const [titleColor, setTitleColor] = useState('#6b46c1')
+  const [titleColor, setTitleColor] = useState('#ffffff')
   const [highlightColor, setHighlightColor] = useState<string | null>('#48bb78')
-  const [segmentColor, setSegmentColor] = useState('#6b46c1')
+  const [segmentColor, setSegmentColor] = useState('#ffffff')
   const [content, setContent] = useState(`Design
 Creative
 Inspiration
@@ -56,9 +62,9 @@ Minimal
 Concept
 Vision
 Art`)
-  const [titleFontSize, setTitleFontSize] = useState(120)
-  const [segmentMinSize, setSegmentMinSize] = useState(16)
-  const [segmentMaxSize, setSegmentMaxSize] = useState(40)
+  const [titleFontSize, setTitleFontSize] = useState(100)
+  const [segmentMinSize, setSegmentMinSize] = useState(30)
+  const [segmentMaxSize, setSegmentMaxSize] = useState(66)
   const [fontFamily, setFontFamily] = useState(FONT_OPTIONS[0].value)
   const [scatteredPositions, setScatteredPositions] = useState<ScatteredText[]>([])
   const [backgroundImage, setBackgroundImage] = useState<string | null>(null)
@@ -69,37 +75,30 @@ Art`)
     const titleWidth = title.length * titleFontSize * 0.9
     const titleHeight = titleFontSize * 1.2
 
+    // Larger exclusion zone around the title
     const exclusionZone = {
-      left: centerX - titleWidth / 2 - 60,
-      right: centerX + titleWidth / 2 + 60,
-      top: centerY - titleHeight / 2 - 40,
-      bottom: centerY + titleHeight / 2 + 40,
+      left: centerX - titleWidth / 2 - 100,
+      right: centerX + titleWidth / 2 + 100,
+      top: centerY - titleHeight / 2 - 80,
+      bottom: centerY + titleHeight / 2 + 80,
     }
 
     const positions: ScatteredText[] = []
-    const padding = 15
-    const frameThickness = 80
+    const padding = 30
+    const frameThickness = CANVAS_HEIGHT * 0.35 // Use more of the canvas
 
     const totalSegments = segments.length
-    const topCount = Math.ceil(totalSegments * 0.3)
-    const bottomCount = Math.ceil(totalSegments * 0.3)
-    const leftCount = Math.ceil(totalSegments * 0.2)
+    // Distribute evenly across all four zones
+    const perZone = Math.ceil(totalSegments / 4)
 
     segments.forEach((text, index) => {
       const fontSize = Math.floor(Math.random() * (segmentMaxSize - segmentMinSize + 1)) + segmentMinSize
 
-      let zone: number
-      if (index < topCount) {
-        zone = 0
-      } else if (index < topCount + bottomCount) {
-        zone = 1
-      } else if (index < topCount + bottomCount + leftCount) {
-        zone = 2
-      } else {
-        zone = 3
-      }
+      // Evenly distribute across 4 zones
+      const zone = Math.floor(index / perZone) % 4
 
-      const isVertical = zone === 2 || zone === 3
+      // Only vertical for left/right zones, with some randomness
+      const isVertical = (zone === 2 || zone === 3) && Math.random() > 0.3
 
       let x = 0
       let y = 0
@@ -108,21 +107,21 @@ Art`)
 
       do {
         switch (zone) {
-          case 0:
+          case 0: // Top zone - spread across full width
             x = padding + Math.random() * (CANVAS_WIDTH - padding * 2)
             y = padding + Math.random() * frameThickness
             break
-          case 1:
+          case 1: // Bottom zone - spread across full width
             x = padding + Math.random() * (CANVAS_WIDTH - padding * 2)
             y = CANVAS_HEIGHT - padding - frameThickness + Math.random() * frameThickness
             break
-          case 2:
-            x = padding + Math.random() * frameThickness
-            y = padding + frameThickness + Math.random() * (CANVAS_HEIGHT - padding * 2 - frameThickness * 2)
+          case 2: // Left zone - spread across full height
+            x = padding + Math.random() * (frameThickness * 0.6)
+            y = padding + Math.random() * (CANVAS_HEIGHT - padding * 2)
             break
-          default:
-            x = CANVAS_WIDTH - padding - frameThickness + Math.random() * frameThickness
-            y = padding + frameThickness + Math.random() * (CANVAS_HEIGHT - padding * 2 - frameThickness * 2)
+          default: // Right zone - spread across full height
+            x = CANVAS_WIDTH - padding - frameThickness * 0.6 + Math.random() * (frameThickness * 0.6)
+            y = padding + Math.random() * (CANVAS_HEIGHT - padding * 2)
             break
         }
         attempts++
@@ -287,6 +286,15 @@ Art`)
     renderCanvas()
   }, [renderCanvas])
 
+  useEffect(() => {
+    const img = new Image()
+    img.onload = () => {
+      setNaturalImageSize({ width: img.width, height: img.height })
+      setBackgroundImage('/sample_image.jpg')
+    }
+    img.src = '/sample_image.jpg'
+  }, [])
+
   const handleExport = () => {
     if (!fabricRef.current) return
 
@@ -316,14 +324,41 @@ Art`)
       const dataUrl = event.target?.result as string
       const img = new Image()
       img.onload = () => {
-        setNaturalImageSize({ width: img.width, height: img.height })
-        setImagePosition({ x: 0, y: 0 })
-        setImageZoom(1)
-        setBackgroundImage(dataUrl)
+        setTempImageSize({ width: img.width, height: img.height })
+        setTempImageUrl(dataUrl)
+        setTempPosition({ x: 0, y: 0 })
+        setTempZoom(1)
+        setShowCropModal(true)
       }
       img.src = dataUrl
     }
     reader.readAsDataURL(file)
+  }
+
+  const handleCropApply = () => {
+    setBackgroundImage(tempImageUrl)
+    setNaturalImageSize(tempImageSize)
+    setImagePosition(tempPosition)
+    setImageZoom(tempZoom)
+    setShowCropModal(false)
+    setTempImageUrl(null)
+  }
+
+  const handleCropCancel = () => {
+    setShowCropModal(false)
+    setTempImageUrl(null)
+    setTempPosition({ x: 0, y: 0 })
+    setTempZoom(1)
+  }
+
+  const handleEditCrop = () => {
+    if (backgroundImage) {
+      setTempImageUrl(backgroundImage)
+      setTempImageSize(naturalImageSize)
+      setTempPosition(imagePosition)
+      setTempZoom(imageZoom)
+      setShowCropModal(true)
+    }
   }
 
   const handleRemoveImage = () => {
@@ -482,98 +517,13 @@ Art`)
                     </button>
                   )}
                 </div>
-                {backgroundImage && naturalImageSize.width > 0 && (
-                  <div className="mt-3 space-y-3">
-                    <label className="block text-sm font-medium text-gray-700">Adjust Image (drag to move)</label>
-                    <div
-                      className="relative overflow-hidden bg-gray-200 rounded-lg cursor-move select-none touch-none"
-                      style={{
-                        width: '100%',
-                        aspectRatio: `${CANVAS_WIDTH}/${CANVAS_HEIGHT}`,
-                      }}
-                      onMouseDown={(e) => {
-                        const startX = e.clientX
-                        const startY = e.clientY
-                        const startPos = { ...imagePosition }
-                        const rect = e.currentTarget.getBoundingClientRect()
-                        const scale = CANVAS_WIDTH / rect.width
-
-                        const handleMouseMove = (moveEvent: MouseEvent) => {
-                          const dx = (moveEvent.clientX - startX) * scale
-                          const dy = (moveEvent.clientY - startY) * scale
-                          setImagePosition({ x: startPos.x + dx, y: startPos.y + dy })
-                        }
-
-                        const handleMouseUp = () => {
-                          window.removeEventListener('mousemove', handleMouseMove)
-                          window.removeEventListener('mouseup', handleMouseUp)
-                        }
-
-                        window.addEventListener('mousemove', handleMouseMove)
-                        window.addEventListener('mouseup', handleMouseUp)
-                      }}
-                      onTouchStart={(e) => {
-                        const touch = e.touches[0]
-                        const startX = touch.clientX
-                        const startY = touch.clientY
-                        const startPos = { ...imagePosition }
-                        const rect = e.currentTarget.getBoundingClientRect()
-                        const scale = CANVAS_WIDTH / rect.width
-
-                        const handleTouchMove = (moveEvent: TouchEvent) => {
-                          const moveTouch = moveEvent.touches[0]
-                          const dx = (moveTouch.clientX - startX) * scale
-                          const dy = (moveTouch.clientY - startY) * scale
-                          setImagePosition({ x: startPos.x + dx, y: startPos.y + dy })
-                        }
-
-                        const handleTouchEnd = () => {
-                          window.removeEventListener('touchmove', handleTouchMove)
-                          window.removeEventListener('touchend', handleTouchEnd)
-                        }
-
-                        window.addEventListener('touchmove', handleTouchMove, { passive: true })
-                        window.addEventListener('touchend', handleTouchEnd)
-                      }}
-                    >
-                      <div
-                        className="absolute"
-                        style={{
-                          width: `${(naturalImageSize.width / CANVAS_WIDTH) * 100 * imageZoom}%`,
-                          height: `${(naturalImageSize.height / CANVAS_HEIGHT) * 100 * imageZoom}%`,
-                          left: `calc(50% + ${(imagePosition.x / CANVAS_WIDTH) * 100}%)`,
-                          top: `calc(50% + ${(imagePosition.y / CANVAS_HEIGHT) * 100}%)`,
-                          transform: 'translate(-50%, -50%)',
-                          backgroundImage: `url(${backgroundImage})`,
-                          backgroundSize: 'contain',
-                          backgroundPosition: 'center',
-                          backgroundRepeat: 'no-repeat',
-                          minWidth: '100%',
-                          minHeight: '100%',
-                        }}
-                      />
-                      <div className="absolute inset-0 border-2 border-dashed border-white/50 pointer-events-none" />
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">
-                        Zoom: {Math.round(imageZoom * 100)}%
-                      </label>
-                      <input
-                        type="range"
-                        min="100"
-                        max="300"
-                        value={imageZoom * 100}
-                        onChange={(e) => setImageZoom(Number(e.target.value) / 100)}
-                        className="w-full"
-                      />
-                    </div>
-                    <button
-                      onClick={() => { setImagePosition({ x: 0, y: 0 }); setImageZoom(1); }}
-                      className="text-sm text-blue-600 hover:text-blue-800"
-                    >
-                      Reset Position & Zoom
-                    </button>
-                  </div>
+                {backgroundImage && (
+                  <button
+                    onClick={handleEditCrop}
+                    className="mt-2 w-full px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors text-sm"
+                  >
+                    Edit Crop
+                  </button>
                 )}
               </div>
 
@@ -682,6 +632,163 @@ Art`)
           </div>
         </div>
       </div>
+
+      {/* Crop Modal */}
+      {showCropModal && tempImageUrl && (() => {
+        const baseScaleX = CANVAS_WIDTH / tempImageSize.width
+        const baseScaleY = CANVAS_HEIGHT / tempImageSize.height
+        const baseScale = Math.max(baseScaleX, baseScaleY)
+        const effectiveScale = baseScale * tempZoom
+
+        const scaledWidth = tempImageSize.width * effectiveScale
+        const scaledHeight = tempImageSize.height * effectiveScale
+
+        const maxOffsetX = Math.max(0, (scaledWidth - CANVAS_WIDTH) / 2)
+        const maxOffsetY = Math.max(0, (scaledHeight - CANVAS_HEIGHT) / 2)
+
+        const clampPosition = (pos: { x: number; y: number }) => ({
+          x: Math.max(-maxOffsetX, Math.min(maxOffsetX, pos.x)),
+          y: Math.max(-maxOffsetY, Math.min(maxOffsetY, pos.y)),
+        })
+
+        const clampedPosition = clampPosition(tempPosition)
+
+        return (
+          <div className="fixed inset-0 z-50 bg-black flex flex-col">
+            {/* Crop Area */}
+            <div className="flex-1 flex items-center justify-center p-4 overflow-hidden">
+              <div
+                className="relative overflow-hidden cursor-move select-none touch-none"
+                style={{
+                  width: '100%',
+                  maxWidth: '90vh',
+                  aspectRatio: `${CANVAS_WIDTH}/${CANVAS_HEIGHT}`,
+                  backgroundColor: '#000',
+                }}
+                onMouseDown={(e) => {
+                  const startX = e.clientX
+                  const startY = e.clientY
+                  const startPos = { ...tempPosition }
+                  const rect = e.currentTarget.getBoundingClientRect()
+                  const displayScale = CANVAS_WIDTH / rect.width
+
+                  const handleMouseMove = (moveEvent: MouseEvent) => {
+                    const dx = (moveEvent.clientX - startX) * displayScale
+                    const dy = (moveEvent.clientY - startY) * displayScale
+                    const newPos = { x: startPos.x + dx, y: startPos.y + dy }
+                    setTempPosition(clampPosition(newPos))
+                  }
+
+                  const handleMouseUp = () => {
+                    window.removeEventListener('mousemove', handleMouseMove)
+                    window.removeEventListener('mouseup', handleMouseUp)
+                  }
+
+                  window.addEventListener('mousemove', handleMouseMove)
+                  window.addEventListener('mouseup', handleMouseUp)
+                }}
+                onTouchStart={(e) => {
+                  const touch = e.touches[0]
+                  const startX = touch.clientX
+                  const startY = touch.clientY
+                  const startPos = { ...tempPosition }
+                  const rect = e.currentTarget.getBoundingClientRect()
+                  const displayScale = CANVAS_WIDTH / rect.width
+
+                  const handleTouchMove = (moveEvent: TouchEvent) => {
+                    const moveTouch = moveEvent.touches[0]
+                    const dx = (moveTouch.clientX - startX) * displayScale
+                    const dy = (moveTouch.clientY - startY) * displayScale
+                    const newPos = { x: startPos.x + dx, y: startPos.y + dy }
+                    setTempPosition(clampPosition(newPos))
+                  }
+
+                  const handleTouchEnd = () => {
+                    window.removeEventListener('touchmove', handleTouchMove)
+                    window.removeEventListener('touchend', handleTouchEnd)
+                  }
+
+                  window.addEventListener('touchmove', handleTouchMove, { passive: true })
+                  window.addEventListener('touchend', handleTouchEnd)
+                }}
+              >
+                {/* Image - accurately matches final render */}
+                <img
+                  src={tempImageUrl}
+                  alt="Crop preview"
+                  className="absolute pointer-events-none"
+                  draggable={false}
+                  style={{
+                    width: `${(scaledWidth / CANVAS_WIDTH) * 100}%`,
+                    height: `${(scaledHeight / CANVAS_HEIGHT) * 100}%`,
+                    left: `calc(50% + ${(clampedPosition.x / CANVAS_WIDTH) * 100}%)`,
+                    top: `calc(50% + ${(clampedPosition.y / CANVAS_HEIGHT) * 100}%)`,
+                    transform: 'translate(-50%, -50%)',
+                    objectFit: 'cover',
+                  }}
+                />
+                {/* Grid overlay (rule of thirds) */}
+                <div className="absolute inset-0 pointer-events-none">
+                  <div className="absolute left-1/3 top-0 bottom-0 w-px bg-white/30" />
+                  <div className="absolute left-2/3 top-0 bottom-0 w-px bg-white/30" />
+                  <div className="absolute top-1/3 left-0 right-0 h-px bg-white/30" />
+                  <div className="absolute top-2/3 left-0 right-0 h-px bg-white/30" />
+                </div>
+              </div>
+            </div>
+
+            {/* Controls */}
+            <div className="p-4 bg-black/80">
+              {/* Zoom Slider */}
+              <div className="flex items-center gap-4 max-w-md mx-auto mb-4">
+                <svg className="w-5 h-5 text-white/70" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0zM13 10H7" />
+                </svg>
+                <input
+                  type="range"
+                  min="100"
+                  max="300"
+                  value={tempZoom * 100}
+                  onChange={(e) => {
+                    const newZoom = Number(e.target.value) / 100
+                    setTempZoom(newZoom)
+                    const newBaseScale = Math.max(baseScaleX, baseScaleY)
+                    const newEffectiveScale = newBaseScale * newZoom
+                    const newScaledWidth = tempImageSize.width * newEffectiveScale
+                    const newScaledHeight = tempImageSize.height * newEffectiveScale
+                    const newMaxOffsetX = Math.max(0, (newScaledWidth - CANVAS_WIDTH) / 2)
+                    const newMaxOffsetY = Math.max(0, (newScaledHeight - CANVAS_HEIGHT) / 2)
+                    setTempPosition({
+                      x: Math.max(-newMaxOffsetX, Math.min(newMaxOffsetX, tempPosition.x)),
+                      y: Math.max(-newMaxOffsetY, Math.min(newMaxOffsetY, tempPosition.y)),
+                    })
+                  }}
+                  className="flex-1 h-1 bg-white/30 rounded-lg appearance-none cursor-pointer"
+                />
+                <svg className="w-5 h-5 text-white/70" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0zM10 7v6m3-3H7" />
+                </svg>
+              </div>
+
+              {/* Buttons */}
+              <div className="flex justify-end gap-3">
+                <button
+                  onClick={handleCropCancel}
+                  className="px-6 py-2 text-white/80 hover:text-white transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleCropApply}
+                  className="px-6 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors"
+                >
+                  Apply
+                </button>
+              </div>
+            </div>
+          </div>
+        )
+      })()}
     </div>
   )
 }
