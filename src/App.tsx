@@ -190,52 +190,134 @@ function App() {
       return boxesOverlap(candidateBox, exclusionZone)
     }
 
-    // Count how many existing positions overlap with a candidate position
-    const countOverlaps = (candidate: { x: number; y: number; text: string; fontSize: number; isVertical: boolean }) => {
-      const candidateBox = getBoundingBox(candidate)
-      let count = 0
+    // Get starting position box (small area around text start)
+    const getStartBox = (pos: { x: number; y: number; fontSize: number; isVertical: boolean }) => {
+      const size = pos.fontSize * 0.8
+      return {
+        left: pos.x,
+        right: pos.x + size,
+        top: pos.y,
+        bottom: pos.y + size,
+      }
+    }
+
+    // Check if starting positions overlap
+    const startPositionOverlaps = (candidate: { x: number; y: number; fontSize: number; isVertical: boolean }) => {
+      const candidateStart = getStartBox(candidate)
       for (const pos of positions) {
-        const posBox = getBoundingBox(pos)
-        if (boxesOverlap(candidateBox, posBox)) {
-          count++
+        const posStart = getStartBox(pos)
+        if (boxesOverlap(candidateStart, posStart)) {
+          return true
         }
       }
-      return count
+      return false
+    }
+
+    // Check if more than 50% of text is outside allowed area
+    const isMoreThanHalfOutside = (candidate: { x: number; y: number; text: string; fontSize: number; isVertical: boolean }) => {
+      const box = getBoundingBox(candidate)
+      const textWidth = box.right - box.left
+      const textHeight = box.bottom - box.top
+
+      // Calculate how much is outside canvas bounds
+      const outsideLeft = Math.max(0, -box.left)
+      const outsideRight = Math.max(0, box.right - CANVAS_WIDTH)
+      const outsideTop = Math.max(0, -box.top)
+      const outsideBottom = Math.max(0, box.bottom - CANVAS_HEIGHT)
+
+      const outsideWidth = outsideLeft + outsideRight
+      const outsideHeight = outsideTop + outsideBottom
+
+      // Check if more than 50% is outside
+      if (candidate.isVertical) {
+        return outsideHeight > textHeight * 0.5
+      } else {
+        return outsideWidth > textWidth * 0.5
+      }
+    }
+
+    // Calculate overlap area between two boxes
+    const getOverlapArea = (a: ReturnType<typeof getBoundingBox>, b: ReturnType<typeof getBoundingBox>) => {
+      const overlapLeft = Math.max(a.left, b.left)
+      const overlapRight = Math.min(a.right, b.right)
+      const overlapTop = Math.max(a.top, b.top)
+      const overlapBottom = Math.min(a.bottom, b.bottom)
+
+      if (overlapRight <= overlapLeft || overlapBottom <= overlapTop) {
+        return 0
+      }
+
+      return (overlapRight - overlapLeft) * (overlapBottom - overlapTop)
+    }
+
+    // Get area of a box
+    const getBoxArea = (box: ReturnType<typeof getBoundingBox>) => {
+      return (box.right - box.left) * (box.bottom - box.top)
+    }
+
+    // Count overlaps and calculate max overlap percentage
+    const analyzeOverlaps = (candidate: { x: number; y: number; text: string; fontSize: number; isVertical: boolean }) => {
+      const candidateBox = getBoundingBox(candidate)
+      const candidateArea = getBoxArea(candidateBox)
+      let count = 0
+      let maxOverlapPercent = 0
+
+      for (const pos of positions) {
+        const posBox = getBoundingBox(pos)
+        const overlapArea = getOverlapArea(candidateBox, posBox)
+
+        if (overlapArea > 0) {
+          count++
+          // Calculate overlap as percentage of smaller element
+          const posArea = getBoxArea(posBox)
+          const smallerArea = Math.min(candidateArea, posArea)
+          const overlapPercent = (overlapArea / smallerArea) * 100
+          maxOverlapPercent = Math.max(maxOverlapPercent, overlapPercent)
+        }
+      }
+
+      return { count, maxOverlapPercent }
     }
 
     // Shuffle segments for random distribution
     const shuffledIndices = segments.map((_, i) => i).sort(() => Math.random() - 0.5)
 
-    segments.forEach((text, originalIndex) => {
-      const fontSize = Math.floor(Math.random() * (segmentMaxSize - segmentMinSize + 1)) + segmentMinSize
+    // Zone distribution: favor top/bottom (40% each) over left/right (10% each)
+    const getZoneForIndex = (idx: number, total: number): number => {
+      const normalized = idx / total
+      if (normalized < 0.4) return 0      // Top: 40%
+      if (normalized < 0.8) return 1      // Bottom: 40%
+      if (normalized < 0.9) return 2      // Left: 10%
+      return 3                             // Right: 10%
+    }
 
-      // Use round-robin to evenly distribute across 4 zones
-      const shuffledPosition = shuffledIndices.indexOf(originalIndex)
-      const zone = shuffledPosition % 4
+    // Wider left/right zones
+    const sideZoneWidth = frameThickness * 1.2
 
-      // Vertical for left/right zones, horizontal for top/bottom zones
-      const isVertical = zone === 2 || zone === 3
+    const MAX_OVERLAP_PERCENT = 15 // Only allow minimal, visually insignificant overlaps
+    const MAX_OVERLAPS = 2 // HARD CONSTRAINT: max 2 overlapping segments
 
-      // Get target section for even distribution
-      const { targetRow, targetCol } = getLeastPopulatedSection(zone)
+    // Try to place a segment in a specific zone
+    const tryPlaceInZone = (
+      text: string,
+      currentFontSize: number,
+      currentZone: number,
+      maxAttempts: number
+    ): { success: boolean; x: number; y: number; fontSize: number; isVertical: boolean; score: number } | null => {
+      const isVertical = currentZone === 2 || currentZone === 3
+      const { targetRow, targetCol } = getLeastPopulatedSection(currentZone)
 
-      let x = 0
-      let y = 0
-      let attempts = 0
-      const maxAttempts = 150
-      let overlapCount = 0
-
-      // First try to find a position with no overlaps
       let bestX = 0
       let bestY = 0
-      let bestOverlapCount = Infinity
+      let bestScore = -Infinity
+      let foundValid = false
 
-      do {
-        // Place within target section with some randomness
+      for (let attempts = 0; attempts < maxAttempts; attempts++) {
         const sectionX = targetCol * sectionWidth
         const sectionY = targetRow * sectionHeight
 
-        switch (zone) {
+        let x: number, y: number
+        switch (currentZone) {
           case 0: // Top zone
             x = sectionX + padding + Math.random() * (sectionWidth - padding * 2)
             y = padding + Math.random() * Math.min(frameThickness, sectionHeight - padding)
@@ -244,60 +326,113 @@ function App() {
             x = sectionX + padding + Math.random() * (sectionWidth - padding * 2)
             y = CANVAS_HEIGHT - padding - frameThickness + Math.random() * frameThickness
             break
-          case 2: // Left zone
-            x = padding + Math.random() * (frameThickness * 0.6)
+          case 2: // Left zone - wider
+            x = padding + Math.random() * sideZoneWidth
             y = sectionY + padding + Math.random() * (sectionHeight - padding * 2)
             break
-          default: // Right zone
-            x = CANVAS_WIDTH - padding - frameThickness * 0.6 + Math.random() * (frameThickness * 0.6)
+          default: // Right zone - wider
+            x = CANVAS_WIDTH - padding - sideZoneWidth + Math.random() * sideZoneWidth
             y = sectionY + padding + Math.random() * (sectionHeight - padding * 2)
             break
         }
-        attempts++
 
-        // Skip if overlaps with title
-        if (overlapsWithTitle({ x, y, text, fontSize, isVertical })) {
-          continue
-        }
+        const candidate = { x, y, text, fontSize: currentFontSize, isVertical }
 
-        // Count overlaps with existing segments
-        overlapCount = countOverlaps({ x, y, text, fontSize, isVertical })
+        // Skip invalid positions
+        if (overlapsWithTitle(candidate)) continue
+        if (isMoreThanHalfOutside(candidate)) continue
 
-        // Track best position (prefer no overlaps, then fewer overlaps)
-        if (overlapCount < bestOverlapCount) {
-          bestOverlapCount = overlapCount
+        const hasStartOverlap = startPositionOverlaps(candidate)
+        const { count: overlapCount, maxOverlapPercent } = analyzeOverlaps(candidate)
+
+        // HARD CONSTRAINT: reject if more than 2 overlaps
+        if (overlapCount > MAX_OVERLAPS) continue
+
+        // Reject large overlaps
+        if (maxOverlapPercent > MAX_OVERLAP_PERCENT && overlapCount > 0) continue
+
+        // Calculate score
+        const score = (hasStartOverlap ? -1000 : 0)
+          - overlapCount * 100
+          - maxOverlapPercent * 10
+
+        if (score > bestScore) {
+          bestScore = score
           bestX = x
           bestY = y
+          foundValid = true
         }
 
-        // Found a position with no overlaps - use it
-        if (overlapCount === 0) break
-
-        if (attempts >= maxAttempts) break
-      } while (
-        overlapsWithTitle({ x, y, text, fontSize, isVertical }) ||
-        overlapCount > 1 // Max 2 lines overlapping (this segment + 1 other)
-      )
-
-      // Use the best position found
-      if (bestOverlapCount < overlapCount) {
-        x = bestX
-        y = bestY
-        overlapCount = bestOverlapCount
+        // Perfect position found
+        if (overlapCount === 0 && !hasStartOverlap) {
+          return { success: true, x, y, fontSize: currentFontSize, isVertical, score }
+        }
       }
 
-      // Update section count
-      const { row, col } = getSection(x, y)
-      sectionCounts[row][col]++
+      if (foundValid) {
+        return { success: true, x: bestX, y: bestY, fontSize: currentFontSize, isVertical, score: bestScore }
+      }
 
-      positions.push({
-        text,
-        fontSize,
-        x,
-        y,
-        angle: 0,
-        isVertical,
-      })
+      return null
+    }
+
+    segments.forEach((text, originalIndex) => {
+      let fontSize = Math.floor(Math.random() * (segmentMaxSize - segmentMinSize + 1)) + segmentMinSize
+      const shuffledPosition = shuffledIndices.indexOf(originalIndex)
+      const primaryZone = getZoneForIndex(shuffledPosition, segments.length)
+
+      // Zone order: primary first, then alternatives
+      const zoneOrder = [primaryZone, ...([0, 1, 2, 3].filter(z => z !== primaryZone))]
+
+      let placed = false
+      let result: { success: boolean; x: number; y: number; fontSize: number; isVertical: boolean; score: number } | null = null
+
+      // Try each zone
+      for (const zone of zoneOrder) {
+        result = tryPlaceInZone(text, fontSize, zone, 50)
+        if (result) {
+          placed = true
+          break
+        }
+      }
+
+      // If still not placed, try reducing font size
+      if (!placed) {
+        const reducedSizes = [
+          Math.floor(fontSize * 0.75),
+          Math.floor(fontSize * 0.5),
+          segmentMinSize
+        ]
+
+        for (const reducedSize of reducedSizes) {
+          if (reducedSize < segmentMinSize) continue
+
+          for (const zone of zoneOrder) {
+            result = tryPlaceInZone(text, reducedSize, zone, 30)
+            if (result) {
+              placed = true
+              fontSize = reducedSize
+              break
+            }
+          }
+          if (placed) break
+        }
+      }
+
+      // Only add if successfully placed (HARD CONSTRAINT enforced)
+      if (result) {
+        const { row, col } = getSection(result.x, result.y)
+        sectionCounts[row][col]++
+
+        positions.push({
+          text,
+          fontSize: result.fontSize,
+          x: result.x,
+          y: result.y,
+          angle: 0,
+          isVertical: result.isVertical,
+        })
+      }
     })
 
     return positions
@@ -519,7 +654,10 @@ function App() {
   return (
     <div className="min-h-screen bg-gray-100 p-4 md:p-8">
       <div className="max-w-7xl mx-auto">
-        <h1 className="text-2xl md:text-3xl font-bold text-gray-800 mb-4 md:mb-8">Blog Thumbnail Generator</h1>
+        <h1 className="text-2xl md:text-3xl font-bold text-gray-800 mb-2">Blog Thumbnail Generator</h1>
+        <p className="text-gray-600 mb-4 md:mb-6">
+          BlogやSNSのサムネイル画像を生成するツールです。ブログのタイトルやハイライトを配置することができ、背景に写真を配置することもできます。
+        </p>
 
         <div className="flex flex-col lg:flex-row gap-4 md:gap-8">
           {/* Canvas Preview */}
